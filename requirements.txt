@@ -1,0 +1,5 @@
+streamlit
+inference-sdk
+streamlit-drawable-canvas
+pillow
+opencv-python-headless
