@@ -4,8 +4,8 @@ import io
 
 import requests
 import streamlit as st
-from PIL import Image, ImageOps
-from streamlit_drawable_canvas import st_canvas
+from PIL import Image, ImageOps, ImageDraw
+from streamlit_image_coordinates import streamlit_image_coordinates
 
 
 WORKSPACE_NAME = "lukes-workspace-uyfur"
@@ -15,7 +15,7 @@ WORKFLOW_ID = "custom-workflow"
 st.set_page_config(page_title="Field Coverage Analyzer", layout="wide")
 
 st.title("Field Coverage Analyzer")
-st.write("Upload a field image, draw the playing surface, then run the Roboflow Workflow.")
+st.write("Upload a field image, click points around the playing surface, then run the Roboflow Workflow.")
 
 api_key = st.secrets.get("ROBOFLOW_API_KEY", "")
 
@@ -23,6 +23,9 @@ if not api_key:
     st.error("Missing ROBOFLOW_API_KEY. Add it in Streamlit Cloud secrets before running.")
     st.stop()
 
+
+if "polygon_points_display" not in st.session_state:
+    st.session_state.polygon_points_display = []
 
 uploaded_file = st.file_uploader(
     "Upload a field image",
@@ -35,15 +38,11 @@ if uploaded_file:
 
     original_width, original_height = image.size
 
-    st.subheader("Uploaded image preview")
-    st.image(image, caption="Uploaded field image", use_column_width=True)
+    max_display_width = 1000
+    max_display_height = 650
 
-    # Resize for drawing so the canvas reliably renders in Streamlit Cloud.
-    max_canvas_width = 900
-    max_canvas_height = 650
-
-    width_scale = max_canvas_width / original_width
-    height_scale = max_canvas_height / original_height
+    width_scale = max_display_width / original_width
+    height_scale = max_display_height / original_height
     scale = min(width_scale, height_scale, 1.0)
 
     display_width = int(original_width * scale)
@@ -51,52 +50,76 @@ if uploaded_file:
 
     display_image = image.resize((display_width, display_height))
 
-    st.subheader("Draw the playing surface")
+    # Draw current polygon preview on the display image.
+    preview = display_image.copy()
+    draw = ImageDraw.Draw(preview)
+
+    points = st.session_state.polygon_points_display
+
+    if len(points) >= 2:
+        draw.line(points, fill="white", width=3)
+
+    if len(points) >= 3:
+        draw.line([points[-1], points[0]], fill="white", width=2)
+
+    for idx, point in enumerate(points):
+        x, y = point
+        r = 5
+        draw.ellipse((x - r, y - r, x + r, y + r), fill="white", outline="black")
+        draw.text((x + 8, y - 8), str(idx + 1), fill="white")
+
+    st.subheader("Define the playing surface")
     st.write(
-        "Draw a polygon around the inside edge of the playing surface. "
-        "Double click to finish the polygon."
+        "Click points around the inside edge of the playing surface. "
+        "Use more points for oval fields. The polygon closes automatically once you have at least 3 points."
     )
 
-    canvas_result = st_canvas(
-        fill_color="rgba(255, 255, 255, 0.15)",
-        stroke_width=3,
-        stroke_color="#FFFFFF",
-        background_image=display_image,
-        update_streamlit=True,
-        height=display_height,
-        width=display_width,
-        drawing_mode="polygon",
-        key="playing_surface_canvas",
+    col_a, col_b, col_c = st.columns([1, 1, 4])
+
+    with col_a:
+        if st.button("Undo last point"):
+            if st.session_state.polygon_points_display:
+                st.session_state.polygon_points_display.pop()
+                st.rerun()
+
+    with col_b:
+        if st.button("Clear polygon"):
+            st.session_state.polygon_points_display = []
+            st.rerun()
+
+    click = streamlit_image_coordinates(
+        preview,
+        key="playing_surface_click_image"
     )
+
+    if click is not None:
+        x = int(click["x"])
+        y = int(click["y"])
+
+        # Avoid adding the same point repeatedly on reruns.
+        if not points or points[-1] != (x, y):
+            st.session_state.polygon_points_display.append((x, y))
+            st.rerun()
+
+    points = st.session_state.polygon_points_display
 
     polygon = None
 
-    if canvas_result.json_data is not None:
-        objects = canvas_result.json_data.get("objects", [])
-
-        if objects:
-            obj = objects[-1]
-
-            points = obj.get("points", [])
-            left = obj.get("left", 0)
-            top = obj.get("top", 0)
-            scale_x = obj.get("scaleX", 1)
-            scale_y = obj.get("scaleY", 1)
-
-            polygon = [
-                [
-                    int((left + p["x"] * scale_x) / scale),
-                    int((top + p["y"] * scale_y) / scale)
-                ]
-                for p in points
+    if len(points) >= 3:
+        polygon = [
+            [
+                int(x / scale),
+                int(y / scale)
             ]
+            for x, y in points
+        ]
 
-    if polygon:
         st.success(f"Playing surface polygon captured with {len(polygon)} points.")
+
         with st.expander("Show polygon coordinates"):
             st.code(json.dumps(polygon), language="json")
     else:
-        st.warning("Draw a polygon around the playing surface before running.")
+        st.warning("Click at least 3 points around the playing surface before running.")
 
     run = st.button("Run field coverage analysis", disabled=polygon is None)
 
@@ -174,5 +197,3 @@ if uploaded_file:
             st.code(json.dumps(output, indent=2))
 else:
     st.info("Upload an image to begin.")
-
-
