@@ -4,7 +4,7 @@ import io
 
 import requests
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageOps
 from streamlit_drawable_canvas import st_canvas
 
 
@@ -30,24 +30,32 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file:
-    image = Image.open(uploaded_file).convert("RGB")
-    width, height = image.size
+    image = Image.open(uploaded_file)
+    image = ImageOps.exif_transpose(image).convert("RGB")
 
-    max_display_width = 1000
+    original_width, original_height = image.size
 
-    if width > max_display_width:
-        scale = max_display_width / width
-        display_width = int(width * scale)
-        display_height = int(height * scale)
-        display_image = image.resize((display_width, display_height))
-    else:
-        scale = 1.0
-        display_width = width
-        display_height = height
-        display_image = image
+    st.subheader("Uploaded image preview")
+    st.image(image, caption="Uploaded field image", use_container_width=True)
+
+    # Resize for drawing so the canvas reliably renders in Streamlit Cloud.
+    max_canvas_width = 900
+    max_canvas_height = 650
+
+    width_scale = max_canvas_width / original_width
+    height_scale = max_canvas_height / original_height
+    scale = min(width_scale, height_scale, 1.0)
+
+    display_width = int(original_width * scale)
+    display_height = int(original_height * scale)
+
+    display_image = image.resize((display_width, display_height))
 
     st.subheader("Draw the playing surface")
-    st.write("Use the polygon tool to trace the inside edge of the playing surface. Double click to finish the polygon.")
+    st.write(
+        "Draw a polygon around the inside edge of the playing surface. "
+        "Double click to finish the polygon."
+    )
 
     canvas_result = st_canvas(
         fill_color="rgba(255, 255, 255, 0.15)",
@@ -93,7 +101,6 @@ if uploaded_file:
     run = st.button("Run field coverage analysis", disabled=polygon is None)
 
     if run and polygon:
-        # Convert uploaded image to base64 for the Roboflow Workflow API.
         buffer = io.BytesIO()
         image.save(buffer, format="JPEG")
         image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
@@ -121,7 +128,6 @@ if uploaded_file:
 
         result = response.json()
 
-        # Roboflow responses may be returned as {"outputs": [...]} or directly as a list.
         if isinstance(result, dict) and "outputs" in result:
             output = result["outputs"][0]
         elif isinstance(result, list):
@@ -168,4 +174,5 @@ if uploaded_file:
             st.code(json.dumps(output, indent=2))
 else:
     st.info("Upload an image to begin.")
+
 
