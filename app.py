@@ -1,11 +1,11 @@
 import json
 import base64
-import tempfile
+import io
 
+import requests
 import streamlit as st
 from PIL import Image
 from streamlit_drawable_canvas import st_canvas
-from inference_sdk import InferenceHTTPClient
 
 
 WORKSPACE_NAME = "lukes-workspace-uyfur"
@@ -75,7 +75,6 @@ if uploaded_file:
             scale_x = obj.get("scaleX", 1)
             scale_y = obj.get("scaleY", 1)
 
-            # Convert display canvas coordinates back to original image coordinates.
             polygon = [
                 [
                     int((left + p["x"] * scale_x) / scale),
@@ -94,29 +93,45 @@ if uploaded_file:
     run = st.button("Run field coverage analysis", disabled=polygon is None)
 
     if run and polygon:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-            image.save(tmp.name)
-            image_path = tmp.name
+        # Convert uploaded image to base64 for the Roboflow Workflow API.
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG")
+        image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
-        client = InferenceHTTPClient(
-            api_url="https://serverless.roboflow.com",
-            api_key=api_key
-        )
+        url = f"https://serverless.roboflow.com/infer/workflows/{WORKSPACE_NAME}/{WORKFLOW_ID}"
+
+        payload = {
+            "api_key": api_key,
+            "inputs": {
+                "image": {
+                    "type": "base64",
+                    "value": image_b64
+                },
+                "playing_surface_zone": polygon
+            }
+        }
 
         with st.spinner("Running Roboflow Workflow..."):
-            result = client.run_workflow(
-                workspace_name=WORKSPACE_NAME,
-                workflow_id=WORKFLOW_ID,
-                images={
-                    "image": image_path
-                },
-                parameters={
-                    "playing_surface_zone": polygon
-                },
-                use_cache=False
-            )
+            response = requests.post(url, json=payload, timeout=60)
 
-        output = result[0]
+        if response.status_code != 200:
+            st.error("Roboflow Workflow request failed.")
+            st.code(response.text)
+            st.stop()
+
+        result = response.json()
+
+        # Roboflow responses may be returned as {"outputs": [...]} or directly as a list.
+        if isinstance(result, dict) and "outputs" in result:
+            output = result["outputs"][0]
+        elif isinstance(result, list):
+            output = result[0]
+        elif isinstance(result, dict):
+            output = result
+        else:
+            st.error("Unexpected response format from Roboflow.")
+            st.code(json.dumps(result, indent=2))
+            st.stop()
 
         st.subheader("Coverage Results")
 
@@ -140,9 +155,17 @@ if uploaded_file:
                 b64 = output_image
 
             if b64:
-                image_bytes = base64.b64decode(b64)
-                st.image(image_bytes, caption="Field coverage output", use_container_width=True)
+                try:
+                    image_bytes = base64.b64decode(b64)
+                    st.image(image_bytes, caption="Field coverage output", use_container_width=True)
+                except Exception:
+                    st.warning("Output image was returned, but could not be decoded.")
+                    st.code(str(output_image))
             else:
                 st.warning("No output image was returned.")
+        else:
+            st.warning("No output_image field was returned.")
+            st.code(json.dumps(output, indent=2))
 else:
     st.info("Upload an image to begin.")
+
