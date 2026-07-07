@@ -138,6 +138,7 @@ if uploaded_file:
 
         payload = {
             "api_key": api_key,
+             "use_cache": False,
             "inputs": {
                 "image": {
                     "type": "base64",
