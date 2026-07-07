@@ -36,7 +36,7 @@ if uploaded_file:
     original_width, original_height = image.size
 
     st.subheader("Uploaded image preview")
-    st.image(image, caption="Uploaded field image", use_container_width=True)
+    st.image(image, caption="Uploaded field image", use_column_width=True)
 
     # Resize for drawing so the canvas reliably renders in Streamlit Cloud.
     max_canvas_width = 900
@@ -163,7 +163,7 @@ if uploaded_file:
             if b64:
                 try:
                     image_bytes = base64.b64decode(b64)
-                    st.image(image_bytes, caption="Field coverage output", use_container_width=True)
+                    st.image(image_bytes, caption="Field coverage output", use_column_width=True)
                 except Exception:
                     st.warning("Output image was returned, but could not be decoded.")
                     st.code(str(output_image))
