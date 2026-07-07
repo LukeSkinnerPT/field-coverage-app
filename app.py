@@ -9,7 +9,7 @@ from streamlit_image_coordinates import streamlit_image_coordinates
 
 
 WORKSPACE_NAME = "lukes-workspace-uyfur"
-WORKFLOW_ID = "Sa7tnLWScYUS95SPPKFy"
+WORKFLOW_ID = "custom-workflow"
 
 
 st.set_page_config(page_title="Field Coverage Analyzer", layout="wide")
@@ -27,12 +27,20 @@ if not api_key:
 if "polygon_points_display" not in st.session_state:
     st.session_state.polygon_points_display = []
 
+if "last_uploaded_name" not in st.session_state:
+    st.session_state.last_uploaded_name = None
+
+
 uploaded_file = st.file_uploader(
     "Upload a field image",
     type=["jpg", "jpeg", "png", "webp"]
 )
 
 if uploaded_file:
+    if st.session_state.last_uploaded_name != uploaded_file.name:
+        st.session_state.polygon_points_display = []
+        st.session_state.last_uploaded_name = uploaded_file.name
+
     image = Image.open(uploaded_file)
     image = ImageOps.exif_transpose(image).convert("RGB")
 
@@ -50,7 +58,6 @@ if uploaded_file:
 
     display_image = image.resize((display_width, display_height))
 
-    # Draw current polygon preview on the display image.
     preview = display_image.copy()
     draw = ImageDraw.Draw(preview)
 
@@ -96,7 +103,6 @@ if uploaded_file:
         x = int(click["x"])
         y = int(click["y"])
 
-        # Avoid adding the same point repeatedly on reruns.
         if not points or points[-1] != (x, y):
             st.session_state.polygon_points_display.append((x, y))
             st.rerun()
@@ -149,38 +155,39 @@ if uploaded_file:
             st.code(response.text)
             st.stop()
 
-       result = response.json()
+        result = response.json()
 
-with st.expander("Raw Roboflow response"):
-    st.code(json.dumps(result, indent=2), language="json")
+        with st.expander("Raw Roboflow response"):
+            st.code(json.dumps(result, indent=2), language="json")
 
-if isinstance(result, dict) and "outputs" in result:
-    outputs = result["outputs"]
+        if isinstance(result, dict) and "outputs" in result:
+            outputs = result["outputs"]
 
-    if isinstance(outputs, list) and len(outputs) > 0:
-        output = outputs[0]
-    elif isinstance(outputs, dict):
-        output = outputs
-    else:
-        st.error("Roboflow returned an empty outputs field.")
-        st.stop()
+            if isinstance(outputs, list) and len(outputs) > 0:
+                output = outputs[0]
+            elif isinstance(outputs, dict):
+                output = outputs
+            else:
+                st.error("Roboflow returned an empty outputs field.")
+                st.stop()
 
-elif isinstance(result, list) and len(result) > 0:
-    output = result[0]
+        elif isinstance(result, list) and len(result) > 0:
+            output = result[0]
 
-elif isinstance(result, dict):
-    output = result
+        elif isinstance(result, dict):
+            output = result
 
-else:
-    st.error("Unexpected response format from Roboflow.")
-    st.code(json.dumps(result, indent=2))
-    st.stop()
-
+        else:
+            st.error("Unexpected response format from Roboflow.")
+            st.code(json.dumps(result, indent=2), language="json")
+            st.stop()
 
         st.subheader("Coverage Results")
 
         if "coverage_results" in output:
             st.json(output["coverage_results"])
+        else:
+            st.warning("No coverage_results field was returned.")
 
         if "coverage_csv" in output:
             st.download_button(
@@ -194,7 +201,11 @@ else:
             output_image = output["output_image"]
 
             if isinstance(output_image, dict):
-                b64 = output_image.get("value") or output_image.get("base64") or output_image.get("data")
+                b64 = (
+                    output_image.get("value")
+                    or output_image.get("base64")
+                    or output_image.get("data")
+                )
             else:
                 b64 = output_image
 
@@ -206,9 +217,10 @@ else:
                     st.warning("Output image was returned, but could not be decoded.")
                     st.code(str(output_image))
             else:
-                st.warning("No output image was returned.")
+                st.warning("No output image data was returned.")
         else:
             st.warning("No output_image field was returned.")
-            st.code(json.dumps(output, indent=2))
+            st.code(json.dumps(output, indent=2), language="json")
+
 else:
     st.info("Upload an image to begin.")
