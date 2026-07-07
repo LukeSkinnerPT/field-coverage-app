@@ -149,18 +149,33 @@ if uploaded_file:
             st.code(response.text)
             st.stop()
 
-        result = response.json()
+       result = response.json()
 
-        if isinstance(result, dict) and "outputs" in result:
-            output = result["outputs"][0]
-        elif isinstance(result, list):
-            output = result[0]
-        elif isinstance(result, dict):
-            output = result
-        else:
-            st.error("Unexpected response format from Roboflow.")
-            st.code(json.dumps(result, indent=2))
-            st.stop()
+with st.expander("Raw Roboflow response"):
+    st.code(json.dumps(result, indent=2), language="json")
+
+if isinstance(result, dict) and "outputs" in result:
+    outputs = result["outputs"]
+
+    if isinstance(outputs, list) and len(outputs) > 0:
+        output = outputs[0]
+    elif isinstance(outputs, dict):
+        output = outputs
+    else:
+        st.error("Roboflow returned an empty outputs field.")
+        st.stop()
+
+elif isinstance(result, list) and len(result) > 0:
+    output = result[0]
+
+elif isinstance(result, dict):
+    output = result
+
+else:
+    st.error("Unexpected response format from Roboflow.")
+    st.code(json.dumps(result, indent=2))
+    st.stop()
+
 
         st.subheader("Coverage Results")
 
