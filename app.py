@@ -9,7 +9,7 @@ from streamlit_image_coordinates import streamlit_image_coordinates
 
 
 WORKSPACE_NAME = "lukes-workspace-uyfur"
-WORKFLOW_ID = "custom-workflow"
+WORKFLOW_ID = "Sa7tnLWScYUS95SPPKFy"
 
 
 st.set_page_config(page_title="Field Coverage Analyzer", layout="wide")
